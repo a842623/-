@@ -1,0 +1,313 @@
+# 标识：这是一个无限流跑团游戏，直接启动游戏模式
+GAME_IDENTIFIER = "无限流跑团游戏启动"
+
+import random
+import time
+
+# 全局变量
+player = {
+    "name": "", "age": 0, "gender": "",
+    "attributes": {"力量": 0, "体质": 0, "敏捷": 0, "智力": 0, "感知": 0, "魅力": 0},
+    "hp": 0, "energy": 0, "skills": [], "equipment": [], "rewards": {"points": 0, "vouchers": {}},
+    "alignment": "", "level": "E", "inventory": [], "save_points": []
+}
+
+world = {
+    "name": "", "level": "E", "anchors": [], "tasks": {"main": [], "side": [], "hidden": []},
+    "enemies": [], "npcs": [], "wheelers": [], "time": 0, "items": [], "skills": [], "bloodlines": [], "materials": []
+}
+
+# 世界数据库与战力表（基础示例）
+WORLD_DATABASE = {
+    "E": {"战力": 1, "worlds": ["名侦探柯南", "哈利·波特", "西游记"]},
+    "D": {"战力": 2, "worlds": ["鬼灭之刃", "钢之炼金术师", "生化危机"]},
+    "C": {"战力": 3, "worlds": ["火影忍者", "海贼王", "进击的巨人"]},
+    "B": {"战力": 4, "worlds": ["龙珠", "巫师3", "辐射4"]},
+    "A": {"战力": 5, "worlds": ["三体", "魔戒", "冰与火之歌"]},
+    "S": {"战力": 6, "worlds": ["漫威宇宙", "DC宇宙", "龙珠超"]}
+}
+
+# 辅助函数
+def roll_d20(bonus=0):
+    result = random.randint(1, 20) + bonus
+    print(f"掷骰 1d20 + {bonus} = {result}")
+    return result
+
+def roll_d6(count=1):
+    total = sum(random.randint(1, 6) for _ in range(count))
+    print(f"掷骰 {count}d6 = {total}")
+    return total
+
+def calc_bonus(attribute):
+    return (attribute - 5) // 2
+
+def level_to_int(level):
+    return {"E": 1, "D": 2, "C": 3, "B": 4, "A": 5, "S": 6, "S+": 7, "SS": 8, "SSS": 9, "EX": 10}[level]
+
+def skill_level_to_dice(level):
+    return {"E": 1, "D": 2, "C": 3, "B": 5, "A": 10, "S": 20, "SS": 50, "SSS": 100, "EX": 200}[level]
+
+def skill_level_to_energy(level):
+    return {"E": 5, "D": 10, "C": 20, "B": 30, "A": 50, "S": 100, "SS": 200, "SSS": 500, "EX": 1000}[level]
+
+# 一、核心规则
+def event_check(attribute, dc):
+    bonus = calc_bonus(player["attributes"][attribute])
+    result = roll_d20(bonus)
+    success = result >= dc
+    print(f"事件检定 ({attribute}): {result} vs DC {dc} - {'成功' if success else '失败'}")
+    return success
+
+def setup_game(name, age, gender, attributes=None, alignment="守序中立"):
+    global player
+    player["name"] = name
+    player["age"] = age
+    player["gender"] = gender
+    player["alignment"] = alignment
+    if attributes:
+        player["attributes"] = attributes
+    else:
+        for attr in player["attributes"]:
+            player["attributes"][attr] = 10
+    player["hp"] = player["attributes"]["体质"] * 10 + calc_bonus(player["attributes"]["力量"]) * 5
+    player["energy"] = sum(player["attributes"].values()) * 2
+    update_player_level()
+    print(f"角色创建完成：姓名 {player['name']}，年龄 {player['age']}，性别 {player['gender']}，生命值 {player['hp']}，能量 {player['energy']}，阵营 {player['alignment']}")
+
+def generate_example_world(level):
+    return random.choice(WORLD_DATABASE[level]["worlds"])
+
+def search_world_description(world_name):
+    descriptions = {
+        "名侦探柯南": "一个充满推理与犯罪的现代都市，普通人类与神秘组织对抗，战力较低。",
+        "哈利·波特": "魔法世界，巫师们使用咒语对抗黑暗势力，战力以魔法为主。",
+        "西游记": "神话世界，妖怪与神仙并存，战力从凡人到仙佛不等。",
+        "鬼灭之刃": "大正时代的日本，人与鬼的殊死搏斗，鬼杀队以剑术对抗超自然鬼怪。",
+        "钢之炼金术师": "炼金术主导的世界，科学与魔法的结合，战力以个体能力为主。",
+        "生化危机": "丧尸横行的末日世界，生化武器与人类生存斗争，战力偏科技与体能。",
+        "火影忍者": "忍者世界，忍术与体术并存，能摧毁村庄的强者层出不穷。",
+        "海贼王": "大航海时代，海贼与海军的对决，恶魔果实赋予超凡力量。",
+        "进击的巨人": "巨人统治的世界，人类以立体机动装置对抗巨型威胁。",
+        "龙珠": "宇宙级的战斗，赛亚人与神明之间的较量，战力足以毁灭星球。",
+        "巫师3": "中世纪奇幻大陆，猎魔人对抗怪兽与阴谋，战力偏个人英雄主义。",
+        "辐射4": "核战后的废土，人类与变种生物共存，科技与生存并重。",
+        "三体": "科幻宇宙，人类面对三体文明的入侵，战力涉及星际科技。",
+        "魔戒": "中土世界，魔戒引发善恶大战，战力从凡人到半神层次。",
+        "冰与火之歌": "维斯特洛大陆，龙与战争交织，战力以军队和神秘力量为主。",
+        "漫威宇宙": "超级英雄与反派的宇宙级冲突，战力足以影响多元宇宙。",
+        "DC宇宙": "神明与英雄并存的世界，战力从街头英雄到宇宙之神。",
+        "龙珠超": "超越凡人的战斗，全宇宙的神明与战士对决，战力无上限。",
+    }
+    if world_name not in descriptions:
+        print(f"正在搜索 {world_name} 的描述...")
+        return f"{world_name} - 这是一个基于战力匹配的世界，具体描述已通过搜索补充：设定为与示例世界战力相似的冒险环境。"
+    return descriptions[world_name]
+
+def search_similar_worlds(example_world, example_power):
+    # 通过搜索功能扩展任务世界池
+    print(f"正在搜索与 {example_world} (战力 {example_power}) 相似的世界...")
+    base_worlds = [w[0] for w in [
+        ("名侦探柯南", 1), ("哈利·波特", 1), ("西游记", 1),
+        ("鬼灭之刃", 2), ("钢之炼金术师", 2), ("生化危机", 2),
+        ("火影忍者", 3), ("海贼王", 3), ("进击的巨人", 3),
+        ("龙珠", 4), ("巫师3", 4), ("辐射4", 4),
+        ("三体", 5), ("魔戒", 5), ("冰与火之歌", 5),
+        ("漫威宇宙", 6), ("DC宇宙", 6), ("龙珠超", 6)
+    ] if w[1] == example_power]
+    additional_worlds = {
+        1: ["柯南兄弟", "夏洛特烦恼", "银魂", "名侦探学院", "侦探已经死了"],
+        2: ["黑客帝国", "攻壳机动队", "环太平洋", "终结者", "异形"],
+        3: ["死神", "猎人", "妖精的尾巴", "一拳超人", "鬼灯的冷彻"],
+        4: ["全职法师", "JOJO的奇妙冒险", "假面骑士", "奥特曼", "魔法禁书目录"],
+        5: ["星际穿越", "沙丘", "银河英雄传说", "基地", "流浪地球"],
+        6: ["超人高校", "X战警", "变形金刚", "圣斗士星矢", "高达"]
+    }.get(example_power, [])
+    combined_worlds = list(set(base_worlds + additional_worlds))
+    if len(combined_worlds) < 9:
+        print(f"战力 {example_power} 世界不足9个，仅找到 {len(combined_worlds)} 个，扩展搜索中...")
+        extra_worlds = ["异世界转生", "刀剑神域", "魔兽世界"]  # 模拟扩展
+        combined_worlds.extend(extra_worlds)
+    return combined_worlds[:max(9, len(combined_worlds))]
+
+def search_world_details(world_name, timeline):
+    print(f"正在搜索 {world_name} 在 '{timeline}' 的详情...")
+    if world_name == "鬼灭之刃" and "炭治郎加入鬼杀队前" in timeline:
+        return {
+            "plot": "大正时期，炭治郎的家人被鬼舞辻无惨屠杀，妹妹祢豆子变为鬼。炭治郎尚未加入鬼杀队，独自承担起救治妹妹的责任。",
+            "anchors": ["炭治郎的家", "鬼舞辻无惨的袭击地点", "初次遇见鬼的森林"],
+            "characters": {"炭治郎": "坚毅善良的少年", "祢豆子": "温柔但被鬼化的妹妹"}
+        }
+    elif world_name == "黑客帝国" and "尼奥觉醒前" in timeline:
+        return {
+            "plot": "尼奥尚未觉醒矩阵真相，作为程序员托马斯·安德森生活，被崔妮蒂等人寻找以对抗矩阵控制。",
+            "anchors": ["尼奥的公寓", "黑客组织基地", "矩阵虚拟城市"],
+            "characters": {"尼奥": "好奇而困惑的程序员", "崔妮蒂": "冷静果断的黑客"}
+        }
+    return {
+        "plot": f"根据搜索，{world_name} 在 '{timeline}' 的剧情为：一个与战力匹配的冒险故事，具体背景待补充。",
+        "anchors": ["搜索锚点1", "搜索锚点2", "搜索锚点3"],
+        "characters": {"未知主角": "根据战力推测的冒险者"}
+    }
+
+def search_world_items(world_name, level):
+    print(f"正在搜索 {world_name} (等级 {level}) 的道具...")
+    if world_name == "鬼灭之刃":
+        return ["日轮刀", "鬼杀队制服", "炭治郎的耳饰"]
+    elif world_name == "黑客帝国":
+        return ["红色药丸", "黑色皮衣", "矩阵数据终端"]
+    return [f"{world_name} 的遗失道具{i}" for i in range(1, 4)]
+
+def search_world_skills(world_name, level):
+    print(f"正在搜索 {world_name} (等级 {level}) 的技能...")
+    if world_name == "鬼灭之刃":
+        return ["水之呼吸", "日之呼吸", "鬼化抗性"]
+    elif world_name == "黑客帝国":
+        return ["矩阵闪避", "代码破解", "虚拟战斗"]
+    return [f"{world_name} 的未知技能{i}" for i in range(1, 4)]
+
+def search_world_bloodlines(world_name, level):
+    print(f"正在搜索 {world_name} (等级 {level}) 的血统...")
+    if world_name == "鬼灭之刃":
+        return ["灶门家族血脉", "鬼化血统", "柱之传承"]
+    elif world_name == "黑客帝国":
+        return ["矩阵觉醒者", "黑客天赋", "人类意志"]
+    return [f"{world_name} 的神秘血统{i}" for i in range(1, 4)]
+
+def search_world_materials(world_name, level):
+    print(f"正在搜索 {world_name} (等级 {level}) 的材料...")
+    if world_name == "鬼灭之刃":
+        return ["鬼血", "日轮钢", "藤花药材"]
+    elif world_name == "黑客帝国":
+        return ["矩阵代码碎片", "虚拟能量晶体", "反抗军零件"]
+    return [f"{world_name} 的未知材料{i}" for i in range(1, 4)]
+
+def enter_qiankun():
+    global world
+    current_level = player["level"]
+    example_world = generate_example_world(current_level)
+    example_power = WORLD_DATABASE[current_level]["战力"]
+    similar_worlds = search_similar_worlds(example_world, example_power)
+    task_world_pool = similar_worlds + [example_world]
+    world_options = random.sample(task_world_pool, min(5, len(task_world_pool)))
+    print("乾坤界根据你的等级生成了以下世界：")
+    for i, opt in enumerate(world_options, 1):
+        desc = search_world_description(opt)
+        print(f"{i}. {opt} (等级 {current_level}) - {desc}")
+    choice = input("请输入世界编号 (1-5) 或 '刷新' (需1000点数)：")
+    if choice == "刷新" and player["rewards"]["points"] >= 1000:
+        player["rewards"]["points"] -= 1000
+        example_world = generate_example_world(current_level)
+        example_power = WORLD_DATABASE[current_level]["战力"]
+        similar_worlds = search_similar_worlds(example_world, example_power)
+        task_world_pool = similar_worlds + [example_world]
+        world_options = random.sample(task_world_pool, min(5, len(task_world_pool)))
+        print("刷新后新世界：")
+        for i, opt in enumerate(world_options, 1):
+            desc = search_world_description(opt)
+            print(f"{i}. {opt} (等级 {current_level}) - {desc}")
+        choice = input("请输入世界编号 (1-5)：")
+    else:
+        if choice == "刷新":
+            print("你当前点数不足 1000，无法刷新，请选择现有世界。")
+            choice = input("请输入世界编号 (1-5)：")
+    world["name"] = world_options[int(choice) - 1]
+    world["level"] = current_level
+    timeline = entry_time()
+    details = search_world_details(world["name"], timeline)
+    world["anchors"] = details["anchors"]
+    world["items"] = search_world_items(world["name"], current_level)
+    world["skills"] = search_world_skills(world["name"], current_level)
+    world["bloodlines"] = search_world_bloodlines(world["name"], current_level)
+    world["materials"] = search_world_materials(world["name"], current_level)
+    print(f"剧情概况：{details['plot']}")
+    print(f"主要角色：{', '.join([f'{k}: {v}' for k, v in details['characters'].items()])}")
+    print(f"可用道具：{', '.join(world['items'])}")
+    print(f"可用技能：{', '.join(world['skills'])}")
+    print(f"可用血统：{', '.join(world['bloodlines'])}")
+    print(f"可用材料：{', '.join(world['materials'])}")
+    world["tasks"]["main"] = generate_main_task(world["anchors"])
+    world["tasks"]["side"] = generate_side_tasks(2)
+    world["time"] = 0
+    print(f"进入世界：{world['name']} (等级 {world['level']})，当前时间：第 {world['time']} 天")
+
+def update_status():
+    max_hp = player["attributes"]["体质"] * 10 + calc_bonus(player["attributes"]["力量"]) * 5
+    max_energy = sum(player["attributes"].values()) * 2
+    print(f"状态：生命值 {player['hp']}/{max_hp}，能量 {player['energy']}/{max_energy}，时间：第 {world['time']} 天")
+
+# 二、战斗规则（省略具体实现）
+def combat(enemy): pass
+def attack(target, attack_type): pass
+def move(): pass
+def dodge(): pass
+def block(): pass
+def enemy_attack(target): pass
+def reward_kill(enemy): pass
+
+# 三、世界与任务
+def entry_time():
+    return input("请输入世界时间线的大致时间（例如：'鸣人童年'）：")
+
+def generate_main_task(anchors):
+    task_types = ["探索", "解谜", "保护"]
+    task_type = random.choice(task_types)
+    if task_type == "探索":
+        return [{"name": f"探索 {anchors[0]}", "difficulty": world["level"], "time_limit": 5, "completion": 0}]
+    elif task_type == "解谜":
+        return [{"name": f"解开 {anchors[1]} 的谜团", "difficulty": world["level"], "time_limit": 3, "completion": 0}]
+    else:
+        return [{"name": f"保护 {anchors[2]}", "difficulty": world["level"], "time_limit": 7, "completion": 0}]
+
+def generate_side_tasks(count):
+    tasks = []
+    for i in range(count):
+        tasks.append({"name": f"支线任务-{i+1}", "difficulty": world["level"], "time_limit": random.randint(3, 10), "completion": 0})
+    return tasks
+
+# 四、NPC与交互（省略）
+def get_character_behavior(character, action): pass
+def check_plot_offset(action): pass
+
+# 五、存档与更新
+def save_game():
+    if len(player["save_points"]) < 3:
+        player["save_points"].append(player.copy())
+        print(f"保存至槽位 {len(player['save_points']) - 1}")
+    else:
+        player["save_points"].pop(0)
+        player["save_points"].append(player.copy())
+        print("保存至槽位 2（覆盖最早存档）")
+
+def update_player_level():
+    total_attributes = sum(player["attributes"].values())
+    levels = [("E", 30, 60), ("D", 60, 90), ("C", 90, 120), ("B", 120, 150), ("A", 150, 200), ("S", 200, 250)]
+    for level, min_attr, max_attr in levels:
+        if min_attr <= total_attributes < max_attr:
+            player["level"] = level
+            break
+    print(f"玩家等级更新为 {player['level']} (总属性: {total_attributes})")
+
+# 主循环
+def main():
+    print(GAME_IDENTIFIER)
+    setup_game("漓能", 23, "男", alignment="守序中立")
+    enter_qiankun()
+    while True:
+        update_status()
+        action = input("你想做什么？(战斗/交互/保存/退出)：").lower()
+        if action == "战斗":
+            enemy = {"name": "测试敌人", "level": world["level"], "hp": 50, "dexterity": 10, "bonus": 2, "damage_dice": 1}
+            combat(enemy)
+        elif action == "交互":
+            npc = {"name": "测试NPC", "template": input("NPC类型 (主角/配角/自由)：").lower()}
+            action_desc = input("描述你的交互行动：")
+            get_character_behavior(npc, action_desc)
+        elif action == "保存":
+            save_game()
+        elif action == "退出":
+            print("游戏结束！")
+            break
+        world["time"] += 1
+
+if __name__ == "__main__":
+    main()
